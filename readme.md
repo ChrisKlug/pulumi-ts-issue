@@ -65,6 +65,39 @@ Diagnostics:
     11: 0x16e99f9  [/home/zerokoll/.nvm/versions/node/v18.12.1/bin/node]
 ```
 
+If I start commenting out resources to see if there is any specific resource causing it, I end up with
+
+```bash
+Previewing update (dev):
+     Type                                                    Name              Plan       Info
+ +   pulumi:pulumi:Stack                                     PulumiLab-dev     create     1 error
+ +   ├─ azure-native:resources:ResourceGroup                 PulumiLab         create     
+ +   │  ├─ azure-native:web:AppServicePlan                   pulumilab-plan-   create     
+ +   │  │  └─ azure-native:web:WebApp                        pulumilab-web-    create     
+ +   │  │     └─ azure-native:web:WebAppApplicationSettings  AppSettings       create     
+ +   │  ├─ azure-native:keyvault:Vault                       pulumilab-kv-     create     
+ +   │  │  └─ azure-native:keyvault:Secret                   testSecret        create     
+ +   │  └─ azure-native:sql:Server                           pulumilab-sql-    create     
+ +   └─ random:index:RandomPassword                          sqlAdminPassword  create     
+
+
+Diagnostics:
+  pulumi:pulumi:Stack (PulumiLab-dev):
+    error: Error: failed to register new resource pulumilab-sql- [azure-native:sql:Server]: 8 RESOURCE_EXHAUSTED: Bandwidth exhausted
+        at Object.registerResource (/home/zerokoll/code/temp/pulumi_repro/node_modules/@pulumi/runtime/resource.ts:294:27)
+        at new Resource (/home/zerokoll/code/temp/pulumi_repro/node_modules/@pulumi/resource.ts:402:13)
+        at new CustomResource (/home/zerokoll/code/temp/pulumi_repro/node_modules/@pulumi/resource.ts:786:9)
+        at new Server (/home/zerokoll/code/temp/pulumi_repro/node_modules/@pulumi/sql/server.ts:166:9)
+        at Object.<anonymous> (/home/zerokoll/code/temp/pulumi_repro/index.ts:114:19)
+        at Module._compile (node:internal/modules/cjs/loader:1159:14)
+        at Module.m._compile (/home/zerokoll/code/temp/pulumi_repro/node_modules/ts-node/src/index.ts:439:23)
+        at Module._extensions..js (node:internal/modules/cjs/loader:1213:10)
+        at Object.require.extensions.<computed> [as .ts] (/home/zerokoll/code/temp/pulumi_repro/node_modules/ts-node/src/index.ts:442:12)
+        at Module.load (node:internal/modules/cjs/loader:1037:32)
+```
+
+after commenting out the Database, FirewallRule, WebAppConnectionStrings, Workspace and Component resources...
+
 ### Environment 2
 
 Running Windows 11 Pro.
