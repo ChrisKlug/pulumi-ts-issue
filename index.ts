@@ -1,7 +1,13 @@
 import * as pulumi from "@pulumi/pulumi";
-import * as azure from "@pulumi/azure-native";
-import * as random from "@pulumi/random";
+import * as authorization from "@pulumi/azure-native/authorization";
 import * as insights from '@pulumi/azure-native/insights/v20200202';
+import * as keyvault from "@pulumi/azure-native/keyvault";
+import * as operationalinsights from "@pulumi/azure-native/operationalinsights";
+import * as resources from "@pulumi/azure-native/resources";
+import * as sql from "@pulumi/azure-native/sql";
+import * as types from "@pulumi/azure-native/types";
+import * as web from "@pulumi/azure-native/web";
+import * as random from "@pulumi/random";
 
 function getName(resourceType: string) {
     return `${pulumi.getProject().toLowerCase()}-${resourceType}-`
@@ -9,11 +15,11 @@ function getName(resourceType: string) {
 
 const config = new pulumi.Config();
 
-const resourceGroup = new azure.resources.ResourceGroup("PulumiLab", {
+const resourceGroup = new resources.ResourceGroup("PulumiLab", {
     resourceGroupName: "PulumiLab"
 });
- 
-const appSvcPlan = new azure.web.AppServicePlan(getName("plan"), {
+
+const appSvcPlan = new web.AppServicePlan(getName("plan"), {
     resourceGroupName: resourceGroup.name,
     kind: "linux",
     reserved: true,
@@ -22,13 +28,11 @@ const appSvcPlan = new azure.web.AppServicePlan(getName("plan"), {
         size: config.require("appServicePlanSize"),
         tier: config.require("appServicePlanTier")
     }
-}, {
-    parent: resourceGroup
 })
 
 const isFreeTier = config.require("appServicePlanTier").toLowerCase() == "free";
 
-const app = new azure.web.WebApp(getName("web"), {
+const app = new web.WebApp(getName("web"), {
     resourceGroupName: resourceGroup.name,
     serverFarmId: appSvcPlan.id,
     siteConfig: {
@@ -37,21 +41,19 @@ const app = new azure.web.WebApp(getName("web"), {
         use32BitWorkerProcess: isFreeTier
     },
     identity: {
-        type: azure.types.enums.web.ManagedServiceIdentityType.SystemAssigned
+        type: types.enums.web.ManagedServiceIdentityType.SystemAssigned
     }
-}, {
-    parent: appSvcPlan
 });
 
-const clientConfig = pulumi.output(azure.authorization.getClientConfig());
+const clientConfig = pulumi.output(authorization.getClientConfig());
 
-const kv = new azure.keyvault.Vault(getName("kv"), {
+const kv = new keyvault.Vault(getName("kv"), {
     resourceGroupName: resourceGroup.name,
     properties: {
         tenantId: clientConfig.tenantId,
         sku: {
-            family: azure.keyvault.SkuFamily.A,
-            name: azure.keyvault.SkuName.Standard
+            family: keyvault.SkuFamily.A,
+            name: keyvault.SkuName.Standard
         },
         accessPolicies: [
             {
@@ -78,22 +80,18 @@ const kv = new azure.keyvault.Vault(getName("kv"), {
             }
         ]
     }
-}, {
-    parent: resourceGroup
 })
 
-new azure.keyvault.Secret("testSecret", {
+new keyvault.Secret("testSecret", {
     resourceGroupName: resourceGroup.name,
     vaultName: kv.name,
     secretName: "testSecret",
     properties: {
         value: "secretValue",
     },
-}, {
-    parent: kv
 });
 
-new azure.web.WebAppApplicationSettings("AppSettings", {
+new web.WebAppApplicationSettings("AppSettings", {
     name: app.name,
     resourceGroupName: app.resourceGroup,
     properties: {
@@ -102,8 +100,6 @@ new azure.web.WebAppApplicationSettings("AppSettings", {
         "DOCKER_REGISTRY_SERVER_PASSWORD": "XXX",
         "KeyVaultName": kv.name
     }
-}, {
-    parent: app
 });
 
 const password = new random.RandomPassword("sqlAdminPassword", {
@@ -111,7 +107,7 @@ const password = new random.RandomPassword("sqlAdminPassword", {
     special: true
 });
 
-const sqlServer = new azure.sql.Server(getName("sql"), {
+const sqlServer = new sql.Server(getName("sql"), {
     resourceGroupName: resourceGroup.name,
     administratorLogin: "infraadmin",
     administratorLoginPassword: password.result,
@@ -119,11 +115,9 @@ const sqlServer = new azure.sql.Server(getName("sql"), {
         login: app.name,
         sid: app.identity.apply(x => x!.principalId)
     }
-}, {
-    parent: resourceGroup
 });
 
-const db = new azure.sql.Database(getName("db"), {
+const db = new sql.Database(getName("db"), {
     databaseName: "infradb",
     resourceGroupName: resourceGroup.name,
     serverName: sqlServer.name,
@@ -132,37 +126,29 @@ const db = new azure.sql.Database(getName("db"), {
         name: "Basic"
     },
     maxSizeBytes: 1 * 1024 * 1024 * 1024
-}, {
-    parent: sqlServer
 });
 
-new azure.sql.FirewallRule("AllowAllWindowsAzureIps", {
+new sql.FirewallRule("AllowAllWindowsAzureIps", {
     firewallRuleName: "AllowAllWindowsAzureIps",
     serverName: sqlServer.name,
     resourceGroupName: resourceGroup.name,
     startIpAddress: "0.0.0.0",
     endIpAddress: "0.0.0.0",
-}, {
-    parent: sqlServer
 });
 
-new azure.web.WebAppConnectionStrings("ConnectionStrings", {
+new web.WebAppConnectionStrings("ConnectionStrings", {
     name: app.name,
     resourceGroupName: app.resourceGroup,
     properties: {
         "infradb": {
-            type: azure.types.enums.web.ConnectionStringType.SQLAzure,
+            type: types.enums.web.ConnectionStringType.SQLAzure,
             value: pulumi.interpolate `Data Source=tcp:${sqlServer.name}.database.windows.net,1433;Initial Catalog=infradb;Authentication=Active Directory Interactive;`
         }
     }
-}, {
-    parent: app
 });
 
-const laws = new azure.operationalinsights.Workspace(getName("laws"), {
+const laws = new operationalinsights.Workspace(getName("laws"), {
     resourceGroupName: resourceGroup.name,
-}, {
-    parent: resourceGroup
 });
 
 const ai = new insights.Component(getName("ai"), {
@@ -170,6 +156,4 @@ const ai = new insights.Component(getName("ai"), {
     workspaceResourceId: laws.id,
     applicationType: "web",
     kind: "web"
-}, {
-    parent: app
 })
